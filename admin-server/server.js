@@ -2877,7 +2877,8 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(port, process.env.ADMIN_HOST || "127.0.0.1", () => {
+const adminHost = process.env.ADMIN_HOST || (process.env.CODESPACE_NAME ? "0.0.0.0" : "127.0.0.1");
+server.listen(port, adminHost, () => {
   console.log(`Educhi admin server ready: http://localhost:${port}`);
 });
 
