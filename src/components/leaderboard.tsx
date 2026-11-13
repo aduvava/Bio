@@ -1,0 +1,620 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  Clock3,
+  Medal,
+  MessageCircleMore,
+  Target,
+  Trophy,
+  X,
+} from "lucide-react";
+import { clsx } from "clsx";
+import { MascotAvatar } from "@/components/mascot-avatar";
+
+type TimeRange = "week" | "month" | "all";
+type EducationLevelId = "all" | "secondary" | "high-school" | "grade-10" | "national-exam";
+
+type AttemptInput = {
+  id: string;
+  userId: string;
+  userName: string;
+  userImage: string | null;
+  cosmetics?: StudentCosmetics;
+  educationLevel: Exclude<EducationLevelId, "all">;
+  grade: string;
+  subject: string;
+  score: number;
+  maxScore: number;
+  durationSeconds: number;
+  submittedAt: string;
+};
+
+type RankedStudent = {
+  id: string;
+  name: string;
+  image: string | null;
+  cosmetics?: StudentCosmetics;
+  score: number;
+  durationSeconds: number;
+  accuracy: number;
+  attemptCount: number;
+  educationLevel: Exclude<EducationLevelId, "all">;
+  grade: string;
+  isCurrentUser?: boolean;
+};
+
+type LeaderboardProps = {
+  currentUser: {
+    id: string;
+    name: string;
+    image: string | null;
+    cosmetics?: StudentCosmetics;
+    educationLevel: Exclude<EducationLevelId, "all">;
+    grade: string;
+  };
+  subjects: string[];
+  attempts: AttemptInput[];
+};
+
+type StudentCosmetics = {
+  avatarFrame?: string | null;
+  nameColorClass?: string | null;
+  title?: string | null;
+  avatarStyle?: string | null;
+  avatarImage?: string | null;
+  avatarInitials?: string | null;
+  animatedAvatar?: boolean;
+};
+
+const timeRanges: { id: TimeRange; label: string }[] = [
+  { id: "week", label: "Tuần này" },
+  { id: "month", label: "Tháng này" },
+  { id: "all", label: "Toàn thời gian" },
+];
+
+const educationLevels: { id: EducationLevelId; label: string; grades: string[] }[] = [
+  { id: "all", label: "Tất cả cấp", grades: [] },
+  { id: "secondary", label: "Trung học cơ sở", grades: ["Lớp 6", "Lớp 7", "Lớp 8", "Lớp 9"] },
+  { id: "high-school", label: "Trung học phổ thông", grades: ["Lớp 10", "Lớp 11", "Lớp 12"] },
+  { id: "grade-10", label: "Ôn thi vào 10", grades: ["Môn thi"] },
+  { id: "national-exam", label: "Ôn thi THPTQG", grades: ["Môn thi"] },
+];
+
+const avatarColors = [
+  "from-sky-400 to-blue-600",
+  "from-violet-400 to-purple-600",
+  "from-emerald-400 to-teal-600",
+  "from-rose-400 to-pink-600",
+  "from-amber-400 to-orange-600",
+  "from-cyan-400 to-indigo-600",
+];
+
+const avatarFrameClasses: Record<string, string> = {
+  "paper-crane": "ring-4 ring-sky-200 shadow-[0_0_18px_rgba(125,211,252,0.45)]",
+  "butterfly-glow": "ring-4 ring-fuchsia-400 shadow-[0_0_24px_rgba(217,70,239,0.45)]",
+  "gold-laurel": "ring-4 ring-amber-400 shadow-[0_0_26px_rgba(251,191,36,0.45)]",
+};
+
+const avatarStyleClasses: Record<string, string> = {
+  detective: "from-amber-200 via-orange-400 to-slate-800",
+  ukulele: "from-pink-200 via-rose-300 to-orange-500",
+  "animated-star": "from-slate-950 via-violet-700 to-yellow-300",
+};
+
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(-2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function stableOffset(value: string) {
+  return Array.from(value).reduce((total, character) => total + character.charCodeAt(0), 0);
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}p ${seconds}s`;
+}
+
+function Avatar({
+  student,
+  size = "md",
+}: {
+  student: RankedStudent;
+  size?: "sm" | "md" | "lg";
+}) {
+  const colorIndex = stableOffset(student.id) % avatarColors.length;
+  const sizes = {
+    sm: "h-11 w-11 text-xs",
+    md: "h-16 w-16 text-base",
+    lg: "h-14 w-14 text-lg sm:h-20 sm:w-20 sm:text-xl lg:h-24 lg:w-24",
+  };
+  const frameClass = student.cosmetics?.avatarFrame ? avatarFrameClasses[student.cosmetics.avatarFrame] : "";
+  const avatarStyle = student.cosmetics?.avatarStyle ? avatarStyleClasses[student.cosmetics.avatarStyle] : "";
+  const avatarText = student.cosmetics?.avatarInitials || initials(student.name);
+  const animatedClass = student.cosmetics?.animatedAvatar ? "animate-pulse" : "";
+
+  const avatarImage = student.cosmetics?.avatarImage ?? student.image;
+  if (avatarImage) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={avatarImage}
+        alt=""
+        className={clsx(sizes[size], "shrink-0 rounded-full object-cover", frameClass, animatedClass)}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={clsx(
+        sizes[size],
+        "grid shrink-0 place-items-center rounded-full bg-gradient-to-br font-black text-white shadow-inner",
+        avatarStyle || avatarColors[colorIndex],
+        frameClass,
+        animatedClass,
+      )}
+    >
+      {avatarText}
+    </span>
+  );
+}
+
+function StudentName({ student, className = "" }: { student: RankedStudent; className?: string }) {
+  return (
+    <span className={clsx(student.cosmetics?.nameColorClass ?? "", className)}>
+      {student.name}
+    </span>
+  );
+}
+
+function StudentTitle({ student, className = "" }: { student: RankedStudent; className?: string }) {
+  if (!student.cosmetics?.title) return null;
+  return (
+    <span className={clsx("mt-1 inline-flex rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-black uppercase text-orange-600", className)}>
+      {student.cosmetics.title}
+    </span>
+  );
+}
+
+function PodiumPlace({
+  student,
+  rank,
+}: {
+  student?: RankedStudent;
+  rank: 1 | 2 | 3;
+}) {
+  if (!student) return null;
+
+  const tones = {
+    1: {
+      card: "border-amber-300 bg-gradient-to-b from-amber-50 via-white to-white shadow-[0_18px_50px_rgba(245,158,11,0.14)] sm:-translate-y-4",
+      ring: "ring-4 ring-amber-300 shadow-[0_12px_28px_rgba(251,191,36,0.22)]",
+      badge: "border-amber-200 bg-amber-100 text-amber-800",
+      score: "text-amber-600",
+      stripe: "from-amber-300 via-yellow-400 to-orange-400",
+    },
+    2: {
+      card: "border-slate-200 bg-gradient-to-b from-slate-50 via-white to-white shadow-[0_12px_38px_rgba(100,116,139,0.09)]",
+      ring: "ring-4 ring-slate-200",
+      badge: "border-slate-200 bg-slate-100 text-slate-600",
+      score: "text-slate-700",
+      stripe: "from-slate-200 via-slate-300 to-slate-400",
+    },
+    3: {
+      card: "border-orange-200 bg-gradient-to-b from-orange-50 via-white to-white shadow-[0_12px_38px_rgba(234,88,12,0.08)]",
+      ring: "ring-4 ring-orange-200",
+      badge: "border-orange-200 bg-orange-100 text-orange-700",
+      score: "text-orange-600",
+      stripe: "from-orange-200 via-orange-300 to-amber-400",
+    },
+  }[rank];
+
+  return (
+    <article
+      data-testid="leaderboard-podium-place"
+      data-rank={rank}
+      aria-label={`Hạng ${rank}: ${student.name}, ${student.score} điểm trên 100`}
+      className={clsx(
+        "relative flex min-w-0 flex-col items-center overflow-hidden rounded-[1.35rem] border px-2.5 pb-3 pt-4 text-center transition-transform sm:rounded-[2rem] sm:px-5 sm:pb-5 sm:pt-6",
+        tones.card,
+      )}
+    >
+      <span className={clsx("mb-4 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide sm:px-3 sm:py-1.5 sm:text-xs", tones.badge)}>
+        {rank === 1 ? <Trophy className="h-3.5 w-3.5" aria-hidden="true" /> : <Medal className="h-3.5 w-3.5" aria-hidden="true" />}
+        Hạng {rank}
+      </span>
+      <div className="relative mt-0.5">
+        <div className={clsx("rounded-full bg-white p-1", tones.ring)}>
+          <Avatar student={student} size="lg" />
+        </div>
+        {rank === 1 ? (
+          <Trophy aria-hidden="true" className="absolute -right-3 -top-4 h-6 w-6 text-amber-500 drop-shadow-sm sm:h-8 sm:w-8" />
+        ) : null}
+      </div>
+      <p className="mt-4 line-clamp-2 min-h-10 w-full break-words text-center text-xs font-black leading-5 text-slate-900 sm:min-h-12 sm:text-base sm:leading-6" title={student.name}>
+        <StudentName student={student} />
+      </p>
+      <StudentTitle student={student} className="max-w-full break-words text-[9px] sm:text-[10px]" />
+      <div className="mt-2 flex flex-wrap items-baseline justify-center gap-x-1 sm:mt-3">
+        <strong className={clsx("text-2xl font-black tracking-tight sm:text-4xl", tones.score)}>{student.score}</strong>
+        <span className="text-[10px] font-extrabold text-slate-500 sm:text-xs">/ 100 điểm</span>
+      </div>
+      <div className="mt-3 inline-flex max-w-full items-center justify-center gap-1 text-[10px] font-semibold text-slate-500 sm:text-xs">
+        <Clock3 className="h-3 w-3 shrink-0" aria-hidden="true" />
+        <span>{formatDuration(student.durationSeconds)}</span>
+      </div>
+      <div className={clsx("absolute inset-x-0 bottom-0 h-1.5 bg-gradient-to-r", tones.stripe)} aria-hidden="true" />
+    </article>
+  );
+}
+
+function ChatButton() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      {open ? (
+        <div className="fixed bottom-[calc(11rem+env(safe-area-inset-bottom))] right-5 z-50 lg:bottom-24 w-[calc(100vw-2.5rem)] max-w-sm rounded-3xl border border-orange-100 bg-white p-5 shadow-2xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-black text-slate-900">Hỗ trợ Educhi</p>
+              <p className="mt-1 text-sm text-slate-500">Bạn cần hỗ trợ về bảng xếp hạng?</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Đóng hỗ trợ"
+              className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <button type="button" className="mt-5 w-full rounded-2xl bg-orange-500 px-4 py-3 text-sm font-extrabold text-white">
+            Bắt đầu trò chuyện
+          </button>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label="Mở hỗ trợ"
+        className="fixed bottom-[calc(7.5rem+env(safe-area-inset-bottom))] right-5 z-50 lg:bottom-6 grid h-16 w-16 place-items-center overflow-hidden rounded-full border-4 border-orange-500 bg-white text-white shadow-[0_14px_35px_rgba(249,115,22,0.38)] transition hover:-translate-y-1"
+      >
+        {open ? <span className="grid h-full w-full place-items-center bg-orange-500"><X className="h-7 w-7" /></span> : <MascotAvatar />}
+      </button>
+    </>
+  );
+}
+
+export function Leaderboard({ currentUser, subjects, attempts }: LeaderboardProps) {
+  const [timeRange, setTimeRange] = useState<TimeRange>("week");
+  const [selectedLevel, setSelectedLevel] = useState<EducationLevelId>("all");
+  const [selectedGrade, setSelectedGrade] = useState("all");
+  const [selectedSubject, setSelectedSubject] = useState("all");
+
+  const subjectOptions = useMemo(
+    () => Array.from(new Set(subjects)).filter(Boolean),
+    [subjects],
+  );
+  const gradeOptions = useMemo(
+    () => educationLevels.find((item) => item.id === selectedLevel)?.grades ?? [],
+    [selectedLevel],
+  );
+
+  const ranking = useMemo(() => {
+    const now = Date.now();
+    const cutoff =
+      timeRange === "week"
+        ? now - 7 * 24 * 60 * 60 * 1000
+        : timeRange === "month"
+          ? now - 30 * 24 * 60 * 60 * 1000
+          : 0;
+    const filteredAttempts = attempts.filter((attempt) => {
+      const inPeriod = new Date(attempt.submittedAt).getTime() >= cutoff;
+      const inSubject = selectedSubject === "all" || attempt.subject === selectedSubject;
+      const inLevel = selectedLevel === "all" || attempt.educationLevel === selectedLevel;
+      const inGrade = selectedGrade === "all" || attempt.grade === selectedGrade;
+      return inPeriod && inSubject && inLevel && inGrade;
+    });
+
+    const realStudents = new Map<string, RankedStudent>();
+    for (const attempt of filteredAttempts) {
+      const normalizedScore = attempt.maxScore > 0 ? Math.round((attempt.score / attempt.maxScore) * 100) : 0;
+      const previous = realStudents.get(attempt.userId);
+      const isBetter =
+        !previous ||
+        normalizedScore > previous.score ||
+        (normalizedScore === previous.score && attempt.durationSeconds < previous.durationSeconds);
+
+      realStudents.set(attempt.userId, {
+        id: attempt.userId,
+        name: attempt.userName,
+        image: attempt.userImage,
+        cosmetics: attempt.cosmetics,
+        score: isBetter ? normalizedScore : previous.score,
+        durationSeconds: isBetter ? attempt.durationSeconds : previous.durationSeconds,
+        accuracy: isBetter ? normalizedScore : previous.accuracy,
+        attemptCount: (previous?.attemptCount ?? 0) + 1,
+        educationLevel: attempt.educationLevel,
+        grade: attempt.grade,
+        isCurrentUser: attempt.userId === currentUser.id,
+      });
+    }
+
+    return [...realStudents.values()]
+      .sort((first, second) => second.score - first.score || first.durationSeconds - second.durationSeconds)
+      .slice(0, 100);
+  }, [attempts, currentUser, selectedGrade, selectedLevel, selectedSubject, timeRange]);
+
+  const currentIndex = ranking.findIndex((student) => student.isCurrentUser);
+  const currentStudent = currentIndex >= 0 ? ranking[currentIndex] : undefined;
+  const targetStudent = currentIndex > 0 ? ranking[currentIndex - 1] : undefined;
+  const podium = ranking.length === 2
+    ? [{ student: ranking[0], rank: 1 as const }, { student: ranking[1], rank: 2 as const }]
+    : [
+        { student: ranking[1], rank: 2 as const },
+        { student: ranking[0], rank: 1 as const },
+        { student: ranking[2], rank: 3 as const },
+      ].filter((place) => Boolean(place.student));
+
+  return (
+    <div className="leaderboard-page min-h-screen bg-[#fffdf0] pb-24">
+      <div className="mx-auto max-w-[1320px] px-4 py-8 sm:px-6 lg:px-8">
+        <header>
+          <div className="flex items-center gap-3">
+            <Trophy className="h-11 w-11 text-amber-500" strokeWidth={2.3} />
+            <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-5xl">Bảng Xếp Hạng</h1>
+          </div>
+        </header>
+
+        <section className="mt-5 space-y-2 rounded-[1.6rem] border border-slate-200 bg-white p-2 shadow-sm sm:mt-7 sm:space-y-3 sm:p-3">
+          <div className="overflow-x-auto rounded-2xl bg-orange-50/70 p-1 sm:p-1.5 [scrollbar-width:thin]">
+            <div className="mx-auto flex w-max min-w-full justify-start gap-1.5 sm:gap-2 lg:justify-center">
+              {educationLevels.map((level) => (
+                <button
+                  key={level.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLevel(level.id);
+                    setSelectedGrade("all");
+                  }}
+                  className={clsx(
+                    "shrink-0 rounded-xl px-3 py-2 text-sm font-extrabold transition sm:px-5 sm:py-3",
+                    selectedLevel === level.id
+                      ? "bg-orange-500 text-white shadow-sm"
+                      : "bg-white text-slate-600 hover:text-orange-600",
+                  )}
+                >
+                  {level.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {selectedLevel !== "all" ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-1 pb-3">
+              <span className="mr-1 text-xs font-black uppercase tracking-wider text-slate-400">Lớp</span>
+              <button
+                type="button"
+                onClick={() => setSelectedGrade("all")}
+                className={clsx(
+                  "rounded-full border px-4 py-2 text-xs font-extrabold transition",
+                  selectedGrade === "all"
+                    ? "border-blue-500 bg-blue-500 text-white"
+                    : "border-slate-200 bg-white text-slate-600",
+                )}
+              >
+                Tất cả lớp
+              </button>
+              {gradeOptions.map((grade) => (
+                <button
+                  key={grade}
+                  type="button"
+                  onClick={() => setSelectedGrade(grade)}
+                  className={clsx(
+                    "rounded-full border px-4 py-2 text-xs font-extrabold transition",
+                    selectedGrade === grade
+                      ? "border-blue-500 bg-blue-500 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-blue-300",
+                  )}
+                >
+                  {grade}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="grid gap-2 sm:gap-3 lg:grid-cols-[1fr_1.25fr]">
+          <div className="grid grid-cols-3 rounded-2xl bg-slate-100 p-1 sm:p-1.5">
+            {timeRanges.map((range) => (
+              <button
+                key={range.id}
+                type="button"
+                onClick={() => setTimeRange(range.id)}
+                className={clsx(
+                  "rounded-xl px-2 py-2 text-xs font-extrabold transition-all sm:px-3 sm:py-3 sm:text-sm",
+                  timeRange === range.id
+                    ? "bg-white text-orange-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900",
+                )}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto rounded-2xl bg-slate-100 p-1 sm:gap-2 sm:p-1.5 [scrollbar-width:thin]">
+            <button
+              type="button"
+              onClick={() => setSelectedSubject("all")}
+              className={clsx(
+                "shrink-0 rounded-xl px-3 py-2 text-sm font-extrabold transition sm:px-5 sm:py-3",
+                selectedSubject === "all" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-900",
+              )}
+            >
+              Tất cả môn
+            </button>
+            {subjectOptions.map((subject) => (
+              <button
+                key={subject}
+                type="button"
+                onClick={() => setSelectedSubject(subject)}
+                className={clsx(
+                  "shrink-0 rounded-xl px-3 py-2 text-sm font-extrabold transition sm:px-5 sm:py-3",
+                  selectedSubject === subject ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-900",
+                )}
+              >
+                {subject}
+              </button>
+            ))}
+          </div>
+          </div>
+        </section>
+
+        {currentStudent ? (
+          <section className="mt-7 grid gap-4 rounded-[1.75rem] border border-orange-200 bg-white p-4 shadow-sm lg:grid-cols-[0.9fr_1.4fr]">
+            <div className="rounded-[1.4rem] bg-gradient-to-br from-orange-500 to-orange-600 p-5 text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-100">Top của bạn</p>
+                  <h2 className="mt-2 text-4xl font-black">#{currentIndex + 1}</h2>
+                </div>
+                <Avatar student={currentStudent} size="md" />
+              </div>
+              <p className="mt-4 truncate text-lg font-black"><StudentName student={currentStudent} /></p>
+              <StudentTitle student={currentStudent} className="bg-white/20 text-white" />
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-extrabold">
+                <span className="rounded-2xl bg-white/16 px-3 py-2">{currentStudent.score} điểm</span>
+                <span className="rounded-2xl bg-white/16 px-3 py-2">{formatDuration(currentStudent.durationSeconds)}</span>
+                <span className="rounded-2xl bg-white/16 px-3 py-2">{currentStudent.accuracy}% đúng</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-center rounded-[1.4rem] bg-orange-50/70 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="flex items-center gap-2 font-black text-orange-800">
+                  <Target className="h-5 w-5 text-orange-500" />
+                  {targetStudent ? "Mục tiêu vượt qua" : "Bạn đang dẫn đầu"}
+                </h2>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-orange-500">
+                  Hạng {currentIndex + 1}/{ranking.length}
+                </span>
+              </div>
+              {targetStudent ? (
+                <div className="mt-4 grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-white px-3 py-3 sm:grid-cols-[64px_minmax(0,1fr)_140px_70px]">
+                  <span className="font-black text-slate-500">#{currentIndex}</span>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar student={targetStudent} size="sm" />
+                    <span className="truncate font-extrabold text-slate-700"><StudentName student={targetStudent} /></span>
+                  </div>
+                  <span className="hidden items-center justify-end gap-2 text-sm text-slate-500 sm:flex">
+                    <Clock3 className="h-4 w-4" /> {formatDuration(targetStudent.durationSeconds)}
+                  </span>
+                  <span className="text-right text-lg font-black text-orange-600">{targetStudent.score} đ</span>
+                </div>
+              ) : (
+                <p className="mt-4 rounded-2xl bg-white px-4 py-4 text-sm font-bold text-slate-600">
+                  Giữ phong độ hiện tại để tiếp tục đứng đầu bảng xếp hạng.
+                </p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {ranking.length ? (
+          <section className="mt-10 sm:mt-14" aria-label="Top học viên nổi bật">
+            <div className="mb-7 text-center sm:mb-9">
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-amber-700">
+                <Trophy className="h-4 w-4" aria-hidden="true" />
+                Vinh danh học viên
+              </span>
+              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Những vị trí dẫn đầu</h2>
+              <p className="mt-1 text-xs text-slate-500 sm:text-sm">Xếp theo thành tích tốt nhất trong bộ lọc đang chọn</p>
+            </div>
+            <div className={clsx(
+              "mx-auto grid items-stretch gap-2 sm:gap-5",
+              podium.length === 1 ? "max-w-[280px] grid-cols-1" :
+              podium.length === 2 ? "max-w-[590px] grid-cols-2" :
+              "max-w-[990px] grid-cols-3",
+            )}>
+              {podium.map((place) => <PodiumPlace key={place.rank} student={place.student} rank={place.rank} />)}
+            </div>
+          </section>
+        ) : (
+          <section className="mt-8 rounded-[1.75rem] border-2 border-dashed border-orange-200 bg-white/70 px-6 py-14 text-center">
+            <Trophy className="mx-auto h-10 w-10 text-orange-300" />
+            <h2 className="mt-4 text-xl font-black text-slate-800">Chưa có dữ liệu xếp hạng</h2>
+            <p className="mt-2 text-sm text-slate-500">Bảng xếp hạng sẽ cập nhật từ các bài thi đã nộp.</p>
+          </section>
+        )}
+
+        <section className="mt-8 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+            <h2 className="text-xl font-black text-slate-900">Xếp hạng học sinh</h2>
+            <span className="rounded-full bg-orange-50 px-4 py-2 text-xs font-extrabold text-orange-600">
+              {ranking.length}/100
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <thead className="bg-slate-50 text-sm font-black uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="w-24 px-6 py-5">Hạng</th>
+                  <th className="px-6 py-5">Học sinh</th>
+                  <th className="px-6 py-5 text-center">Điểm số</th>
+                  <th className="px-6 py-5 text-center">Thời gian</th>
+                  <th className="px-6 py-5 text-right">Tỉ lệ đúng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ranking.slice(3, 100).map((student, index) => {
+                  const rank = index + 4;
+                  const isHighlighted = student.isCurrentUser;
+                  return (
+                    <tr
+                      key={student.id}
+                      className={clsx(
+                        "border-t border-slate-100 transition",
+                        isHighlighted ? "bg-orange-50" : "hover:bg-slate-50/70",
+                      )}
+                    >
+                      <td className="px-6 py-5 text-center text-base font-black text-slate-500">#{rank}</td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-4">
+                          <Avatar student={student} size="sm" />
+                          <div className="min-w-0">
+                            <p className={clsx("truncate font-black", isHighlighted ? "text-orange-600" : "text-slate-900")}>
+                              <StudentName student={student} />
+                              {isHighlighted ? " (Bạn)" : ""}
+                            </p>
+                            <StudentTitle student={student} />
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {student.grade} · Đã làm {student.attemptCount} đề
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-center text-xl font-black text-orange-600">{student.score}</td>
+                      <td className="px-6 py-5 text-center font-semibold text-slate-600">
+                        {formatDuration(student.durationSeconds)}
+                      </td>
+                      <td className="px-6 py-5 text-right font-semibold text-slate-600">{student.accuracy}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <ChatButton />
+    </div>
+  );
+}

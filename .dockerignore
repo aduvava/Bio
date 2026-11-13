@@ -1,0 +1,14 @@
+.git
+node_modules
+.next
+.next-stale-*
+.postgres-data
+.postgresql
+.npm-cache
+.env
+.env.*
+!.env.example
+*.log
+
+# Private runtime document storage must never enter container build context
+storage/

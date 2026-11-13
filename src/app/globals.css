@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #fffdf7;
+  --foreground: #10212b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-slowedu), Arial, sans-serif;
+  background: #f1f5f9;
+  color: var(--foreground);
+}
+
+.site-layout {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(249, 115, 22, 0.1), transparent 32rem),
+    radial-gradient(circle at 84% 10%, rgba(59, 130, 246, 0.07), transparent 28rem),
+    linear-gradient(180deg, #fffdf8 0%, #fff8ed 48%, #fffdf8 100%);
+}
+
+.site-main {
+  padding-top: 64px;
+}
+
+/* A single-row mobile nav leaves a consistent footer clearance on every phone. */
+@media (max-width: 1023px) {
+  .site-layout {
+    padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+
+  /* Landing/about pages deliberately have no fixed bottom navigation. */
+  .site-layout:has(.hide-site-header) {
+    padding-bottom: 0;
+  }
+}
+
+.site-layout:has(.hide-site-header) > header > div {
+  justify-content: space-between;
+}
+
+@media (min-width: 1024px) {
+  .site-main {
+    padding-top: 76px;
+  }
+
+  body {
+    zoom: 0.95;
+  }
+
+  .site-layout:has(.hide-site-header) .intro-page-nav {
+    display: flex;
+  }
+}
+
+.site-layout:has(.hide-site-header) > header > div > nav:not(.intro-page-nav),
+.site-layout:has(.hide-site-header) > header > div > .desktop-header-actions {
+  display: none;
+}
+
+.site-layout:has(.student-login-page) > header > div > .desktop-header-actions {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .site-layout:has(.student-login-page) > header > div {
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  /* Avoid automatic zoom when focusing form fields on iPhone. */
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 640px) {
+  .site-layout:has(.student-login-page) > header > div {
+    justify-content: flex-start;
+    gap: 3rem;
+  }
+}
+
+::selection {
+  background: #f06d3a;
+  color: #fffdf7;
+}
+
+.prose-lite p {
+  margin: 1rem 0;
+  line-height: 1.8;
+  color: rgba(16, 33, 43, 0.72);
+}

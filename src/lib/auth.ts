@@ -1,0 +1,111 @@
+import bcrypt from "bcryptjs";
+import type { NextAuthOptions } from "next-auth";
+import { getServerSession } from "next-auth";
+import { cookies } from "next/headers";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { rateLimitOperation, TooManyRequestsError } from "@/lib/security-throttle";
+import { isVerifiedGoogleIdentity } from "@/lib/google-account-link";
+import { resolveActiveRole } from "@/lib/roles";
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  role: z.enum(["STUDENT", "TEACHER", "ADMIN"]).optional()
+});
+
+const providers: NextAuthOptions["providers"] = [
+  CredentialsProvider({
+    name: "Email",
+    credentials: {
+      email: { label: "Email", type: "email" },
+      password: { label: "Password", type: "password" },
+      role: { label: "Role", type: "text" }
+    },
+    async authorize(credentials, request) {
+      const parsed = loginSchema.safeParse(credentials);
+      if (!parsed.success) return null;
+      // Limit all attempts (successful and failed) before bcrypt work.
+      // NextAuth credentials requests expose request.headers.
+      try {
+        await rateLimitOperation(prisma, "login", parsed.data.email, request.headers);
+      } catch (error) {
+        if (error instanceof TooManyRequestsError) return null;
+        throw error; // Fail closed when the throttle database is unavailable.
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+      if (!user?.passwordHash) return null;
+      // Student and teacher use the same account/password; admin stays restricted.
+      if (parsed.data.role === "ADMIN" && user.role !== "ADMIN") return null;
+
+      const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
+      if (!valid) return null;
+
+      return { id: user.id, name: user.name, email: user.email, image: user.image, role: user.role };
+    }
+  })
+];
+
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  providers.push(
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      // Google provides verified emails. This lets existing email/password users
+      // sign in with their verified Google identity without a manual link step.
+      allowDangerousEmailAccountLinking: true,
+    })
+  );
+}
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  session: { strategy: "jwt" },
+  pages: { signIn: "/login" },
+  providers,
+  callbacks: {
+    async signIn({ account, profile }) {
+      // Never trust an unverified identity. Google accounts with different
+      // emails stay separate unless the user is deliberately linking accounts.
+      return account?.provider !== "google" || isVerifiedGoogleIdentity(profile);
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        const role = (user as { role?: string }).role;
+        token.role = role === "ADMIN" ? "ADMIN" : role === "TEACHER" ? "TEACHER" : "STUDENT";
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token.id) {
+        session.user.id = String(token.id);
+        const stored = await prisma.user.findUnique({
+          where: { id: String(token.id) },
+          select: { role: true },
+        });
+        const selected = (await cookies()).get("educhi_active_role")?.value;
+        session.user.role = resolveActiveRole(stored?.role, selected);
+      }
+      return session;
+    }
+  }
+};
+
+export async function getCurrentUser() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return null;
+  // Never authorize Server Components using a potentially stale JWT role.
+  // A deleted user or a revoked admin/teacher must lose access immediately.
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true, name: true, email: true, image: true, role: true },
+  });
+  if (!user) return null;
+  const selected = (await cookies()).get("educhi_active_role")?.value;
+  return { ...user, role: resolveActiveRole(user.role, selected) };
+}

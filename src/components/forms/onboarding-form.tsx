@@ -1,0 +1,81 @@
+"use client";
+
+import { useState } from "react";
+import { normalizeProvince, normalizeSchoolGrade, SCHOOL_GRADES, VIETNAM_PROVINCES } from "@/data/profile-options";
+
+type OnboardingFormProps = {
+  nextPath?: string;
+  role?: "STUDENT" | "TEACHER";
+  initialProfile?: {
+    grade?: string | null;
+    school?: string | null;
+    province?: string | null;
+  } | null;
+};
+
+export function OnboardingForm({ initialProfile, nextPath = "/dashboard", role = "STUDENT" }: OnboardingFormProps) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const teacher = role === "TEACHER";
+  const initialGrade = normalizeSchoolGrade(initialProfile?.grade);
+  const initialProvince = normalizeProvince(initialProfile?.province);
+
+  async function submit(formData: FormData) {
+    setPending(true);
+    setMessage("Đang lưu hồ sơ...");
+    try {
+      const payload = teacher
+        ? { school: formData.get("school"), province: formData.get("province"), source: "onboarding" }
+        : {
+          grade: formData.get("grade"),
+          school: formData.get("school"),
+          province: formData.get("province"),
+          source: "onboarding",
+        };
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        setMessage(data?.error ?? "Không lưu được hồ sơ. Vui lòng kiểm tra thông tin.");
+        return;
+      }
+      window.location.assign(nextPath);
+    } catch {
+      setMessage("Không kết nối được máy chủ. Vui lòng thử lại.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form action={submit} className="grid gap-4">
+      {!teacher ? (
+        <label className="grid gap-2 text-sm font-bold text-ink/70">
+          Lớp
+          <select name="grade" required defaultValue={initialGrade} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100">
+            <option value="" disabled>Chọn lớp</option>
+            {SCHOOL_GRADES.map((grade) => <option key={grade} value={grade}>Lớp {grade}</option>)}
+          </select>
+        </label>
+      ) : null}
+      <label className="grid gap-2 text-sm font-bold text-ink/70">
+        {teacher ? "Trường đang giảng dạy" : "Trường đang học"}
+        <input name="school" required minLength={2} defaultValue={initialProfile?.school ?? ""} placeholder="Ví dụ: THPT Nguyễn Trãi" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100" />
+      </label>
+      <label className="grid gap-2 text-sm font-bold text-ink/70">
+        Tỉnh/thành
+        <select name="province" required defaultValue={initialProvince} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100">
+          <option value="" disabled>Chọn tỉnh/thành</option>
+          {VIETNAM_PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}
+        </select>
+      </label>
+      <button disabled={pending} className="min-h-12 w-full rounded-2xl bg-orange-500 px-5 py-3 font-extrabold text-white shadow-md transition hover:bg-orange-600 disabled:opacity-60" type="submit">
+        {pending ? "ĐANG LƯU..." : "HOÀN TẤT & TIẾP TỤC"}
+      </button>
+      {message ? <p role="status" className="text-sm font-semibold text-slate-700">{message}</p> : null}
+    </form>
+  );
+}
